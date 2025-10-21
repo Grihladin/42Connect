@@ -118,6 +118,7 @@ def _project_payload_to_kwargs(
     "validated": data.get("validated?"),
     "final_mark": data.get("final_mark"),
     "marked_at": parse_datetime(data.get("marked_at")),
+    "finished_at": parse_datetime(data.get("validated_at")) or parse_datetime(data.get("marked_at")),
     "synced_at": utcnow(),
   }
 

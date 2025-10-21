@@ -20,6 +20,8 @@ class Student(Base):
   email: Mapped[str | None] = mapped_column(String(255))
   image_url: Mapped[str | None] = mapped_column(Text())
   campus: Mapped[str | None] = mapped_column(String(255))
+  vibe: Mapped[str | None] = mapped_column(String(255))
+  ready_to_help: Mapped[bool | None] = mapped_column(Boolean)
   created_at: Mapped[datetime] = mapped_column(
     DateTime(timezone=True),
     server_default=func.now(),
@@ -48,6 +50,7 @@ class Project(Base):
   final_mark: Mapped[int | None] = mapped_column(Integer)
   progress_percent: Mapped[int | None] = mapped_column(Integer)
   marked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+  finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
   synced_at: Mapped[datetime] = mapped_column(
     DateTime(timezone=True),
     server_default=func.now(),

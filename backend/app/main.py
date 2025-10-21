@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from pydantic import BaseModel, Field
 
 from .config import Settings, get_settings
 from .database import get_session
@@ -65,6 +66,20 @@ def _state_cookie_kwargs(settings: Settings) -> dict:
   return kwargs
 
 
+def _state_cookie_delete_kwargs(settings: Settings) -> dict:
+  kwargs: dict = {"path": "/"}
+  if settings.session_cookie_domain:
+    kwargs["domain"] = settings.session_cookie_domain
+  return kwargs
+
+
+def _cookie_delete_kwargs(settings: Settings) -> dict:
+  kwargs: dict = {"path": "/"}
+  if settings.session_cookie_domain:
+    kwargs["domain"] = settings.session_cookie_domain
+  return kwargs
+
+
 app = FastAPI(title="42 OAuth Bridge", version="0.1.0")
 
 _startup_settings = get_settings()
@@ -116,6 +131,8 @@ def student_to_dict(student: Student) -> dict:
     "email": student.email,
     "imageUrl": student.image_url,
     "campus": student.campus,
+    "vibe": student.vibe,
+    "readyToHelp": student.ready_to_help,
     "createdAt": student.created_at.isoformat() if student.created_at else None,
     "updatedAt": student.updated_at.isoformat() if student.updated_at else None,
   }
@@ -133,6 +150,7 @@ def project_to_dict(project: Project) -> dict:
     "finalMark": project.final_mark,
     "progressPercent": project.progress_percent,
     "markedAt": project.marked_at.isoformat() if project.marked_at else None,
+    "finishedAt": project.finished_at.isoformat() if project.finished_at else None,
     "syncedAt": project.synced_at.isoformat() if project.synced_at else None,
   }
 
@@ -213,7 +231,7 @@ async def callback(
     encode_session(session, settings),
     **_cookie_kwargs(settings),
   )
-  response.delete_cookie(settings.oauth_state_cookie_name, **_state_cookie_kwargs(settings))
+  response.delete_cookie(settings.oauth_state_cookie_name, **_state_cookie_delete_kwargs(settings))
   return response
 
 
@@ -222,7 +240,7 @@ async def logout(
   settings: Settings = Depends(get_settings),
   session: Optional[SessionData] = Depends(get_optional_session),
 ) -> RedirectResponse:
-  if session and session.user.refresh_token:
+  if session and session.refresh_token:
     async with build_oauth_client(settings, token={"refresh_token": session.refresh_token}) as client:
       try:
         await client.post(
@@ -238,8 +256,8 @@ async def logout(
         pass
 
   response = RedirectResponse(settings.frontend_app_url, status_code=status.HTTP_303_SEE_OTHER)
-  response.delete_cookie(settings.session_cookie_name, **_cookie_kwargs(settings))
-  response.delete_cookie(settings.oauth_state_cookie_name, **_state_cookie_kwargs(settings))
+  response.delete_cookie(settings.session_cookie_name, **_cookie_delete_kwargs(settings))
+  response.delete_cookie(settings.oauth_state_cookie_name, **_state_cookie_delete_kwargs(settings))
   return response
 
 
@@ -269,6 +287,11 @@ def is_in_progress_project(project: Project) -> bool:
   if not is_finished_project(project) and project.final_mark is None:
     return True
   return False
+
+
+class UpdatePreferencesPayload(BaseModel):
+  vibe: str = Field(..., min_length=1, max_length=255)
+  readyToHelp: bool
 
 
 @app.get("/students/me")
@@ -310,6 +333,28 @@ async def current_student(
       "cursus": [cursus_to_dict(cursus) for cursus in student.cursus_enrollments],
     }
   )
+
+
+@app.post("/students/me/preferences")
+async def update_preferences(
+  payload: UpdatePreferencesPayload,
+  session: SessionData = Depends(get_required_session),
+  db: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+  student = await db.scalar(
+    select(Student).where(Student.forty_two_id == session.user.id)
+  )
+  if not student:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not synced")
+
+  cleaned_vibe = payload.vibe.strip()
+  student.vibe = cleaned_vibe or None
+  student.ready_to_help = payload.readyToHelp
+
+  await db.commit()
+  await db.refresh(student)
+
+  return JSONResponse({"student": student_to_dict(student)})
 
 
 @app.get("/healthz")
