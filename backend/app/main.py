@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from functools import lru_cache
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from .config import Settings
+from .config import Settings, get_settings
+from .database import get_session
 from .oauth import (
   FORTY_TWO_AUTHORIZATION_URL,
   FORTY_TWO_USERINFO_URL,
@@ -22,13 +25,19 @@ from .session import (
   encode_session,
   encode_state,
 )
+from .sync import sync_student_data
+from .models import CursusEnrollment, Project, Student
+
+FINISHED_STATUSES = {"finished", "passed", "validated", "done", "completed"}
+IN_PROGRESS_STATUSES = {
+  "in_progress",
+  "waiting_for_correction",
+  "searching_a_group",
+  "creating_group",
+  "parent",
+}
 
 load_dotenv()
-
-
-@lru_cache
-def get_settings() -> Settings:
-  return Settings.from_env()
 
 
 def _cookie_kwargs(settings: Settings) -> dict:
@@ -78,6 +87,14 @@ async def get_optional_session(
   return decode_session(raw, settings)
 
 
+async def get_required_session(
+  session: Optional[SessionData] = Depends(get_optional_session),
+) -> SessionData:
+  if not session:
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+  return session
+
+
 def session_to_payload(session: SessionData) -> dict:
   return {
     "user": {
@@ -87,6 +104,48 @@ def session_to_payload(session: SessionData) -> dict:
       "imageUrl": session.user.image_url,
     },
     "expiresAt": session.expires_at,
+  }
+
+
+def student_to_dict(student: Student) -> dict:
+  return {
+    "id": student.id,
+    "fortyTwoId": student.forty_two_id,
+    "login": student.login,
+    "displayName": student.display_name,
+    "email": student.email,
+    "imageUrl": student.image_url,
+    "campus": student.campus,
+    "createdAt": student.created_at.isoformat() if student.created_at else None,
+    "updatedAt": student.updated_at.isoformat() if student.updated_at else None,
+  }
+
+
+def project_to_dict(project: Project) -> dict:
+  return {
+    "id": project.id,
+    "fortyTwoProjectUserId": project.forty_two_project_user_id,
+    "fortyTwoProjectId": project.forty_two_project_id,
+    "slug": project.slug,
+    "name": project.name,
+    "status": project.status,
+    "validated": project.validated,
+    "finalMark": project.final_mark,
+    "progressPercent": project.progress_percent,
+    "markedAt": project.marked_at.isoformat() if project.marked_at else None,
+    "syncedAt": project.synced_at.isoformat() if project.synced_at else None,
+  }
+
+
+def cursus_to_dict(cursus: CursusEnrollment) -> dict:
+  return {
+    "id": cursus.id,
+    "fortyTwoCursusId": cursus.forty_two_cursus_id,
+    "name": cursus.name,
+    "grade": cursus.grade,
+    "beganAt": cursus.began_at.isoformat() if cursus.began_at else None,
+    "endedAt": cursus.ended_at.isoformat() if cursus.ended_at else None,
+    "syncedAt": cursus.synced_at.isoformat() if cursus.synced_at else None,
   }
 
 
@@ -109,6 +168,7 @@ async def callback(
   code: Optional[str] = None,
   state: Optional[str] = None,
   settings: Settings = Depends(get_settings),
+  db: AsyncSession = Depends(get_session),
 ) -> RedirectResponse:
   if not code or not state:
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing OAuth parameters")
@@ -133,6 +193,8 @@ async def callback(
 
     profile = user_response.json()
 
+    await sync_student_data(db, client, profile)
+
   session = SessionData(
     user=UserProfile(
       id=profile.get("id"),
@@ -156,9 +218,28 @@ async def callback(
 
 
 @app.post("/auth/logout")
-async def logout(settings: Settings = Depends(get_settings)) -> RedirectResponse:
+async def logout(
+  settings: Settings = Depends(get_settings),
+  session: Optional[SessionData] = Depends(get_optional_session),
+) -> RedirectResponse:
+  if session and session.user.refresh_token:
+    async with build_oauth_client(settings, token={"refresh_token": session.refresh_token}) as client:
+      try:
+        await client.post(
+          "https://api.intra.42.fr/oauth/token",
+          data={
+            "grant_type": "revoke_token",
+            "token": session.refresh_token,
+            "client_id": settings.forty_two_client_id,
+            "client_secret": settings.forty_two_client_secret,
+          },
+        )
+      except Exception:
+        pass
+
   response = RedirectResponse(settings.frontend_app_url, status_code=status.HTTP_303_SEE_OTHER)
   response.delete_cookie(settings.session_cookie_name, **_cookie_kwargs(settings))
+  response.delete_cookie(settings.oauth_state_cookie_name, **_state_cookie_kwargs(settings))
   return response
 
 
@@ -169,6 +250,66 @@ async def session_endpoint(
   if not session:
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
   return JSONResponse(session_to_payload(session))
+
+
+def is_finished_project(project: Project) -> bool:
+  if project.validated:
+    return True
+  if project.status and project.status.lower() in FINISHED_STATUSES:
+    return True
+  if project.final_mark is not None and (project.status or "").lower() not in IN_PROGRESS_STATUSES:
+    return True
+  return False
+
+
+def is_in_progress_project(project: Project) -> bool:
+  status = (project.status or "").lower()
+  if status in IN_PROGRESS_STATUSES:
+    return True
+  if not is_finished_project(project) and project.final_mark is None:
+    return True
+  return False
+
+
+@app.get("/students/me")
+async def current_student(
+  session: SessionData = Depends(get_required_session),
+  db: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+  student = await db.scalar(
+    select(Student)
+    .where(Student.forty_two_id == session.user.id)
+    .options(
+      selectinload(Student.projects),
+      selectinload(Student.cursus_enrollments),
+    )
+  )
+
+  if not student:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not synced")
+
+  finished_projects = [
+    project_to_dict(project)
+    for project in student.projects
+    if is_finished_project(project)
+  ]
+  in_progress_projects = [
+    project_to_dict(project)
+    for project in student.projects
+    if is_in_progress_project(project)
+  ]
+
+  return JSONResponse(
+    {
+      "student": student_to_dict(student),
+      "projects": {
+        "finished": finished_projects,
+        "inProgress": in_progress_projects,
+        "all": [project_to_dict(project) for project in student.projects],
+      },
+      "cursus": [cursus_to_dict(cursus) for cursus in student.cursus_enrollments],
+    }
+  )
 
 
 @app.get("/healthz")
