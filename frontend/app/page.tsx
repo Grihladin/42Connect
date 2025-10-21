@@ -1,7 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { FormEventHandler, useEffect, useState, useTransition } from "react";
+import {
+  ChangeEventHandler,
+  FormEventHandler,
+  useEffect,
+  useState,
+  useTransition,
+} from "react";
 
 type SessionUser = {
   id: number;
@@ -33,6 +39,7 @@ type StudentPayload = {
     login: string;
     displayName: string | null;
     campus: string | null;
+    readyToHelp: boolean | null;
   };
   projects: {
     finished: ProjectSummary[];
@@ -90,6 +97,7 @@ export default function Page() {
               login: data.student.login,
               displayName: data.student.displayName,
               campus: data.student.campus ?? null,
+              readyToHelp: data.student.readyToHelp ?? null,
             },
             projects: {
               finished: normalizeProjects(data.projects.finished),
@@ -138,12 +146,42 @@ export default function Page() {
     });
   };
 
+  const handleReadyToHelpChange = async (value: boolean) => {
+    try {
+      const response = await fetch(`${AUTH_BASE_URL}/students/me/preferences`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ readyToHelp: value }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update preference");
+      }
+      const data = await response.json();
+      setProfile((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          student: {
+            ...current.student,
+            readyToHelp: data.student.readyToHelp ?? null,
+          },
+        };
+      });
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  };
+
   return (
     <div className="page-shell">
       <header className="page-shell__header">
-        <div className="page-shell__brand" aria-label="42 Connect">
+        <div className="page-shell__brand" aria-label="42 Project Pulse">
           <span className="page-shell__glyph">42</span>
-          <span>Connect</span>
+          <span>Project Pulse</span>
         </div>
         {session.status === "authenticated" ? (
           <span className="session-chip session-chip--online">Signed in</span>
@@ -168,6 +206,7 @@ export default function Page() {
             profileStatus={profileStatus}
             onLogout={handleLogout}
             isLoggingOut={isLoggingOut}
+            onReadyToHelpChange={handleReadyToHelpChange}
           />
         )}
       </div>
@@ -185,6 +224,7 @@ type DashboardCardProps = {
   profileStatus: "idle" | "loading" | "error";
   onLogout: FormEventHandler<HTMLFormElement>;
   isLoggingOut: boolean;
+  onReadyToHelpChange: (value: boolean) => Promise<void>;
 };
 
 function DashboardCard({
@@ -193,17 +233,42 @@ function DashboardCard({
   profileStatus,
   onLogout,
   isLoggingOut,
+  onReadyToHelpChange,
 }: DashboardCardProps) {
   const displayName = sessionUser.displayName || sessionUser.login;
   const campus = profile?.student.campus ?? null;
   const finished = profile?.projects.finished ?? [];
   const inProgress = profile?.projects.inProgress ?? [];
+  const readyToHelpPreference = profile?.student.readyToHelp ?? false;
   const sortedInProgress = [...inProgress].sort(
     (a, b) => getProjectUpdateTimestamp(b) - getProjectUpdateTimestamp(a)
   );
   const sortedFinished = [...finished].sort(
     (a, b) => getFinishedTimestamp(b) - getFinishedTimestamp(a)
   );
+  const [helperPreference, setHelperPreference] = useState<boolean>(readyToHelpPreference);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const [isUpdatingHelper, startPreferenceUpdate] = useTransition();
+
+  useEffect(() => {
+    setHelperPreference(readyToHelpPreference);
+  }, [readyToHelpPreference]);
+
+  const handleReadyToHelpToggle: ChangeEventHandler<HTMLInputElement> = (event) => {
+    const nextValue = event.target.checked;
+    const previousValue = helperPreference;
+    setHelperPreference(nextValue);
+    setPreferenceError(null);
+    startPreferenceUpdate(async () => {
+      try {
+        await onReadyToHelpChange(nextValue);
+      } catch (error) {
+        console.error(error);
+        setHelperPreference(previousValue);
+        setPreferenceError("We couldn't update your availability. Please try again.");
+      }
+    });
+  };
 
   return (
     <section className="panel panel--dashboard" aria-live="polite">
@@ -240,6 +305,47 @@ function DashboardCard({
           </button>
         </form>
       </header>
+
+      {profile ? (
+        <section
+          className="panel__section panel__section--preference"
+          aria-label="Peer support preference"
+        >
+          <label
+            className={`helper-preference${
+              isUpdatingHelper ? " helper-preference--busy" : ""
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="helper-preference__input"
+              checked={helperPreference}
+              onChange={handleReadyToHelpToggle}
+              disabled={isUpdatingHelper}
+            />
+            <span className="helper-preference__indicator" aria-hidden="true" />
+            <span className="helper-preference__content">
+              <span className="helper-preference__title">Available to help others</span>
+              <span className="helper-preference__description">
+                When enabled, classmates can reach out for guidance on projects you&apos;ve
+                completed.
+              </span>
+            </span>
+            <span
+              className="helper-preference__status"
+              role="status"
+              aria-live="polite"
+            >
+              {isUpdatingHelper ? "Saving…" : helperPreference ? "On" : "Off"}
+            </span>
+          </label>
+          {preferenceError ? (
+            <p className="helper-preference__error" role="alert">
+              {preferenceError}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {profileStatus === "loading" && (
         <p className="panel__notice panel__notice--loading">
