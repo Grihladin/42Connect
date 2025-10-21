@@ -1,14 +1,19 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import Image from "next/image";
+import { FormEventHandler, useEffect, useState, useTransition } from "react";
+
+type SessionUser = {
+  id: number;
+  login: string;
+  displayName: string;
+  imageUrl?: string | null;
+};
 
 type SessionState =
   | { status: "loading" }
   | { status: "unauthenticated" }
-  | {
-      status: "authenticated";
-      user: { id: number; login: string; displayName: string; imageUrl?: string | null };
-    };
+  | { status: "authenticated"; user: SessionUser };
 
 type ProjectSummary = {
   id: number;
@@ -18,6 +23,9 @@ type ProjectSummary = {
   finalMark: number | null;
   validated: boolean | null;
   progressPercent?: number | null;
+  syncedAt?: string | null;
+  finishedAt?: string | null;
+  markedAt?: string | null;
 };
 
 type StudentPayload = {
@@ -39,16 +47,16 @@ const AUTH_BASE_URL =
 export default function Page() {
   const [session, setSession] = useState<SessionState>({ status: "loading" });
   const [profile, setProfile] = useState<StudentPayload | null>(null);
-  const [profileStatus, setProfileStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [profileStatus, setProfileStatus] =
+    useState<"idle" | "loading" | "error">("idle");
   const [isLoggingOut, startLogout] = useTransition();
 
   useEffect(() => {
     async function fetchSession() {
       try {
-        const response = await fetch(
-          `${AUTH_BASE_URL}/auth/session`,
-          { credentials: "include" }
-        );
+        const response = await fetch(`${AUTH_BASE_URL}/auth/session`, {
+          credentials: "include",
+        });
         if (!response.ok) throw new Error("Session lookup failed");
         const data = await response.json();
         setSession({ status: "authenticated", user: data.user });
@@ -106,8 +114,319 @@ export default function Page() {
     };
   }, [session.status]);
 
-const loginUrl = `${AUTH_BASE_URL}/auth/login`;
-const logoutUrl = `${AUTH_BASE_URL}/auth/logout`;
+  const loginUrl = `${AUTH_BASE_URL}/auth/login`;
+  const logoutUrl = `${AUTH_BASE_URL}/auth/logout`;
+
+  const handleLogout: FormEventHandler<HTMLFormElement> = (event) => {
+    event.preventDefault();
+    startLogout(async () => {
+      try {
+        const response = await fetch(logoutUrl, {
+          method: "POST",
+          credentials: "include",
+        });
+        if (response.redirected) {
+          window.location.href = response.url;
+        } else if (response.ok) {
+          window.location.href = "/";
+        } else {
+          throw new Error("Logout failed");
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    });
+  };
+
+  return (
+    <div className="page-shell">
+      <header className="page-shell__header">
+        <div className="page-shell__brand" aria-label="42 Project Pulse">
+          <span className="page-shell__glyph">42</span>
+          <span>Project Pulse</span>
+        </div>
+        {session.status === "authenticated" ? (
+          <span className="session-chip session-chip--online">Signed in</span>
+        ) : (
+          <span className="session-chip session-chip--offline">Guest</span>
+        )}
+      </header>
+
+      <div className="page-shell__content">
+        {session.status === "loading" && (
+          <LoadingCard message="Checking your session…" />
+        )}
+
+        {session.status === "unauthenticated" && (
+          <LoginCard loginUrl={loginUrl} />
+        )}
+
+        {session.status === "authenticated" && (
+          <DashboardCard
+            sessionUser={session.user}
+            profile={profile}
+            profileStatus={profileStatus}
+            onLogout={handleLogout}
+            isLoggingOut={isLoggingOut}
+          />
+        )}
+      </div>
+
+      <footer className="page-shell__footer">
+        <p>Secure authentication powered by 42 Intra.</p>
+      </footer>
+    </div>
+  );
+}
+
+type DashboardCardProps = {
+  sessionUser: SessionUser;
+  profile: StudentPayload | null;
+  profileStatus: "idle" | "loading" | "error";
+  onLogout: FormEventHandler<HTMLFormElement>;
+  isLoggingOut: boolean;
+};
+
+function DashboardCard({
+  sessionUser,
+  profile,
+  profileStatus,
+  onLogout,
+  isLoggingOut,
+}: DashboardCardProps) {
+  const displayName = sessionUser.displayName || sessionUser.login;
+  const campus = profile?.student.campus ?? null;
+  const finished = profile?.projects.finished ?? [];
+  const inProgress = profile?.projects.inProgress ?? [];
+  const tracked = profile?.projects.all ?? [];
+  const sortedInProgress = [...inProgress].sort(
+    (a, b) => getProjectUpdateTimestamp(b) - getProjectUpdateTimestamp(a)
+  );
+  const sortedFinished = [...finished].sort(
+    (a, b) => getFinishedTimestamp(b) - getFinishedTimestamp(a)
+  );
+
+  const stats = [
+    { label: "Finished", value: finished.length },
+    { label: "In progress", value: inProgress.length },
+    { label: "Tracked", value: tracked.length },
+  ];
+
+  return (
+    <section className="panel panel--dashboard" aria-live="polite">
+      <header className="panel__heading">
+        <div className="identity">
+          <div className="identity__avatar" aria-hidden="true">
+            {sessionUser.imageUrl ? (
+              <Image
+                src={sessionUser.imageUrl}
+                alt=""
+                fill
+                sizes="(max-width: 720px) 56px, 64px"
+                className="identity__image"
+              />
+            ) : (
+              <span className="identity__initials">{getInitials(displayName)}</span>
+            )}
+          </div>
+          <div className="identity__details">
+            <h2>Welcome back, {displayName}</h2>
+            <p>
+              <span className="identity__handle">@{sessionUser.login}</span>
+              {campus ? <span> · {campus}</span> : null}
+            </p>
+          </div>
+        </div>
+        <form onSubmit={onLogout} className="panel__actions">
+          <button
+            type="submit"
+            className="button button--ghost"
+            disabled={isLoggingOut}
+          >
+            {isLoggingOut ? "Signing out…" : "Sign out"}
+          </button>
+        </form>
+      </header>
+
+      <section className="panel__section" aria-label="Project overview">
+        <ul className="stats">
+          {stats.map((stat) => (
+            <li key={stat.label} className="stats__item">
+              <span className="stats__value">{stat.value}</span>
+              <span className="stats__label">{stat.label}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {profileStatus === "loading" && (
+        <p className="panel__notice panel__notice--loading">
+          Syncing your latest 42 data…
+        </p>
+      )}
+
+      {profileStatus === "error" && (
+        <p className="panel__notice panel__notice--error">
+          We could not load your projects. Please try again shortly.
+        </p>
+      )}
+
+      {profile && (
+        <div className="panel__sections">
+          <ProjectList
+            title="In Progress"
+            projects={sortedInProgress}
+            emptyMessage="You're all caught up. No projects in progress."
+            context="in-progress"
+          />
+          <ProjectList
+            title="Completed"
+            projects={sortedFinished}
+            emptyMessage="No completed projects yet."
+            context="completed"
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+type ProjectListProps = {
+  title: string;
+  projects: ProjectSummary[];
+  emptyMessage: string;
+  context: "in-progress" | "completed";
+};
+
+function ProjectList({ title, projects, emptyMessage, context }: ProjectListProps) {
+  const statusLabel = context === "in-progress" ? "In progress" : "Finished";
+  const variantClass =
+    context === "in-progress" ? " project-card--in-progress" : " project-card--completed";
+  const subtitleText =
+    context === "in-progress"
+      ? "Current work, ordered by latest activity."
+      : "Recently completed projects, newest first.";
+
+  return (
+    <section className={`project-card${variantClass}`}>
+      <header className="project-card__header">
+        <div>
+          <h3 className="project-card__title">{title}</h3>
+          <p className="project-card__subtitle">{subtitleText}</p>
+        </div>
+        <span className="project-card__count" aria-label={`${projects.length} projects`}>
+          {projects.length}
+          <span className="project-card__count-label">
+            {projects.length === 1 ? "project" : "projects"}
+          </span>
+        </span>
+      </header>
+      <ul className="project-card__list">
+        {projects.length === 0 ? (
+          <li className="project-card__empty">{emptyMessage}</li>
+        ) : (
+          projects.map((project) => {
+            const projectName = project.name || project.slug || "Untitled project";
+            const progressValue = clampProgress(project.progressPercent);
+            const showScore = context === "completed" && project.finalMark !== null;
+            const showProgress =
+              context === "in-progress"
+                ? progressValue !== null
+                : !showScore && progressValue !== null;
+            const fallbackLabel =
+              !showScore && !showProgress
+                ? context === "in-progress"
+                  ? "Awaiting updates"
+                  : "Score pending"
+                : null;
+            const needsRetake = project.validated === false;
+
+            return (
+              <li key={project.id} className="project-row">
+                <div className="project-row__main">
+                  <span className="project-row__name">{projectName}</span>
+                  <span className="project-row__status">{statusLabel}</span>
+                </div>
+                <div className="project-row__meta">
+                  {showProgress && progressValue !== null ? (
+                    <div
+                      className="project-progress"
+                      role="progressbar"
+                      aria-label={`${projectName} progress`}
+                      aria-valuenow={progressValue}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                    >
+                      <div className="project-progress__track">
+                        <div
+                          className="project-progress__fill"
+                          style={{ width: `${progressValue}%` }}
+                        />
+                      </div>
+                      <span className="project-progress__value">
+                        {progressValue}%
+                      </span>
+                    </div>
+                  ) : null}
+                  {showScore ? (
+                    <span className="project-row__score">{project.finalMark}</span>
+                  ) : null}
+                  {fallbackLabel ? (
+                    <span className="project-row__note">{fallbackLabel}</span>
+                  ) : null}
+                  {needsRetake ? (
+                    <span className="project-row__badge project-row__badge--invalid">
+                      Retake
+                    </span>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })
+        )}
+      </ul>
+    </section>
+  );
+}
+
+type LoginCardProps = {
+  loginUrl: string;
+};
+
+function LoginCard({ loginUrl }: LoginCardProps) {
+  return (
+    <section className="panel panel--auth">
+      <div className="panel__lead">
+        <h1>Sign in with 42 Intra</h1>
+        <p>
+          Connect your campus account to unlock a focused dashboard of your
+          progress.
+        </p>
+      </div>
+      <div className="panel__actions">
+        <a className="button button--primary" href={loginUrl}>
+          Continue with 42
+        </a>
+        <p className="panel__message">
+          Redirects to the official 42 authentication portal.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+type LoadingCardProps = {
+  message: string;
+};
+
+function LoadingCard({ message }: LoadingCardProps) {
+  return (
+    <section className="panel panel--loading" aria-live="polite">
+      <span className="panel__spinner" aria-hidden="true" />
+      <p>{message}</p>
+    </section>
+  );
+}
 
 function normalizeProjects(projects: ProjectSummary[]): ProjectSummary[] {
   return projects
@@ -124,7 +443,10 @@ function normalizeProjects(projects: ProjectSummary[]): ProjectSummary[] {
       return {
         ...project,
         name: normalizedName,
-        progressPercent: parsedPercent?.percent ?? null,
+        progressPercent: clampProgress(parsedPercent?.percent ?? null),
+        finishedAt: project.finishedAt ?? null,
+        syncedAt: project.syncedAt ?? null,
+        markedAt: project.markedAt ?? null,
       };
     });
 }
@@ -149,168 +471,35 @@ function parseTrailingPercentage(name?: string | null):
   };
 }
 
-const handleLogout: React.FormEventHandler<HTMLFormElement> = (event) => {
-    event.preventDefault();
-    startLogout(async () => {
-      try {
-        const response = await fetch(logoutUrl, {
-          method: "POST",
-          credentials: "include",
-        });
-        if (response.redirected) {
-          window.location.href = response.url;
-        } else if (response.ok) {
-          window.location.href = "/";
-        } else {
-          throw new Error("Logout failed");
-        }
-      } catch (error) {
-        console.error(error);
-      }
-    });
-  };
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "42";
+  const [first, second] = parts;
+  if (!second) return first.slice(0, 2).toUpperCase();
+  return `${first[0]}${second[0]}`.toUpperCase();
+}
 
+function clampProgress(value?: number | null): number | null {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return null;
+  }
+  return Math.max(0, Math.min(Math.round(value), 100));
+}
+
+function getTimestamp(value?: string | null): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getProjectUpdateTimestamp(project: ProjectSummary): number {
   return (
-    <div className="w-full space-y-6 rounded-3xl border border-slate-800 bg-slate-900/60 p-10 shadow-xl">
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-semibold text-sky-200">
-          Sign in with 42 Intra
-        </h1>
-        <p className="text-slate-400">
-          Authenticate with your 42 credentials to access the dashboard.
-        </p>
-      </div>
-
-      {session.status === "loading" && (
-        <p className="text-center text-slate-400">Checking your session…</p>
-      )}
-
-      {session.status === "unauthenticated" && (
-        <div className="flex flex-col items-center gap-4">
-          <a
-            href={loginUrl}
-            className="inline-flex items-center justify-center rounded-full bg-sky-500 px-6 py-3 text-lg font-medium text-slate-950 transition hover:bg-sky-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"
-          >
-            Continue with 42
-          </a>
-          <p className="text-sm text-slate-500">
-            You will be redirected to the official 42 login page.
-          </p>
-        </div>
-      )}
-
-      {session.status === "authenticated" && (
-        <div className="space-y-4 text-center">
-          <p className="text-lg">
-            Welcome back,{" "}
-            <span className="font-semibold text-sky-200">
-              {session.user.displayName || session.user.login}
-            </span>
-            !
-          </p>
-          <div className="flex justify-center">
-            <form onSubmit={handleLogout}>
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-full border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isLoggingOut}
-              >
-                {isLoggingOut ? "Signing out…" : "Sign out"}
-              </button>
-            </form>
-          </div>
-
-          <div className="mt-6 space-y-3 text-left">
-            {profileStatus === "loading" && (
-              <p className="text-sm text-slate-500">Syncing your latest 42 data…</p>
-            )}
-            {profileStatus === "error" && (
-              <p className="text-sm text-rose-400">
-                We could not load your projects. Please try again shortly.
-              </p>
-            )}
-            {profile && (
-              <>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4">
-                  <h2 className="text-left text-xl font-semibold text-sky-200">
-                    {profile.student.displayName || profile.student.login}
-                  </h2>
-                  <p className="text-sm text-slate-400">
-                    Intraname: <span className="font-mono text-slate-200">{profile.student.login}</span>
-                    {profile.student.campus && (
-                      <>
-                        {" "}· Campus: <span className="text-slate-300">{profile.student.campus}</span>
-                      </>
-                    )}
-                  </p>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <section className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-                    <header className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-sky-200">Finished projects</h3>
-                      <span className="text-sm text-slate-400">
-                        {profile.projects.finished.length}
-                      </span>
-                    </header>
-                    <ul className="space-y-2 text-sm text-slate-300">
-                      {profile.projects.finished.length === 0 && (
-                        <li className="text-slate-500">No finished projects yet.</li>
-                      )}
-                      {profile.projects.finished.map((project) => (
-                        <li key={project.id} className="flex justify-between gap-2">
-                          <span>{project.name || project.slug || "Untitled project"}</span>
-                          <span className="flex items-center gap-2">
-                            {typeof project.progressPercent === "number" && (
-                              <span className="font-mono text-slate-500">
-                                {project.progressPercent}%
-                              </span>
-                            )}
-                            {project.finalMark !== null && (
-                              <span className="font-mono text-slate-400">{project.finalMark}</span>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-
-                  <section className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-                    <header className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-sky-200">In progress</h3>
-                      <span className="text-sm text-slate-400">
-                        {profile.projects.inProgress.length}
-                      </span>
-                    </header>
-                    <ul className="space-y-2 text-sm text-slate-300">
-                      {profile.projects.inProgress.length === 0 && (
-                        <li className="text-slate-500">No projects in progress.</li>
-                      )}
-                      {profile.projects.inProgress.slice(0, 5).map((project) => (
-                        <li key={project.id} className="flex justify-between gap-2">
-                          <span>{project.name || project.slug || "Untitled project"}</span>
-                          <span className="flex items-center gap-2">
-                            {typeof project.progressPercent === "number" && (
-                              <span className="font-mono text-slate-500">
-                                {project.progressPercent}%
-                              </span>
-                            )}
-                            {project.status && (
-                              <span className="ml-2 font-mono uppercase tracking-wide text-slate-500">
-                                {project.status.replace(/_/g, " ")}
-                              </span>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
+    getTimestamp(project.syncedAt) ||
+    getTimestamp(project.markedAt) ||
+    getTimestamp(project.finishedAt)
   );
+}
+
+function getFinishedTimestamp(project: ProjectSummary): number {
+  return getTimestamp(project.finishedAt) || getProjectUpdateTimestamp(project);
 }
