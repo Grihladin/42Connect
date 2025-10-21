@@ -277,6 +277,18 @@ function HelperCard({ helper }: { helper: HelperMatch }) {
           </span>
         ) : null}
         {vibe ? <span className="helper-card__note">{vibe}</span> : null}
+        <button
+          type="button"
+          className="helper-card__cta"
+          onClick={() =>
+            window.open(
+              `https://slack.com/app_redirect?channel=${encodeURIComponent(helper.student.login)}`,
+              "_blank"
+            )
+          }
+        >
+          Ping on Slack
+        </button>
       </div>
     </li>
   );

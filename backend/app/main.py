@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from difflib import SequenceMatcher
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -448,6 +449,69 @@ async def helpers_endpoint(
     })
 
   return JSONResponse({"projects": matches})
+
+
+def _vibe_similarity(value_a: str, value_b: str) -> float:
+  if not value_a or not value_b:
+    return 0.0
+  return SequenceMatcher(None, value_a.lower(), value_b.lower()).ratio()
+
+
+@app.get("/students/me/vibe-matches")
+async def vibe_matches_endpoint(
+  session: SessionData = Depends(get_required_session),
+  db: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+  student = await db.scalar(
+    select(Student)
+    .where(Student.forty_two_id == session.user.id)
+    .options(selectinload(Student.projects))
+  )
+
+  if not student:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not synced")
+
+  if not student.vibe:
+    return JSONResponse({"matches": []})
+
+  peers_result = await db.scalars(
+    select(Student)
+    .where(
+      Student.id != student.id,
+      Student.vibe.is_not(None),
+    )
+    .options(selectinload(Student.projects))
+  )
+
+  peers = peers_result.all()
+  matches: list[dict] = []
+
+  for peer in peers:
+    similarity = _vibe_similarity(student.vibe, peer.vibe or "")
+    if similarity < 0.3:
+      continue
+
+    latest_finished = None
+    for project in peer.projects:
+      if is_finished_project(project):
+        if not latest_finished:
+          latest_finished = project
+        elif project.finished_at and (
+          not latest_finished.finished_at
+          or project.finished_at > latest_finished.finished_at
+        ):
+          latest_finished = project
+
+    matches.append(
+      {
+        "student": student_to_dict(peer),
+        "similarity": round(similarity * 100, 2),
+        "latestProject": project_to_dict(latest_finished) if latest_finished else None,
+      }
+    )
+
+  matches.sort(key=lambda item: item["similarity"], reverse=True)
+  return JSONResponse({"matches": matches[:10]})
 
 
 @app.get("/healthz")

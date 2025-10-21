@@ -1,0 +1,39 @@
+.env
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+
+# macOS artifacts
+.DS_Store
+
+# IDE/editor settings
+.idea/
+.vscode/
+
+# Local build or tooling outputs
+.pytest_cache/
+*.log
+
+# Node/npm (if used for frontend assets)
+node_modules/
+
+# Coverage reports
+.coverage
+htmlcov/
+
+# Conda environment folders
+.conda/
+
+# Optional: compiled assets
+dist/
+build/

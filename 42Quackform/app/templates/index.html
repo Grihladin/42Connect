@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>42Quackform Vibes</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<main class="container">
+    <header>
+        <h1>42Quackform Vibes</h1>
+        <p>Store vibes by uid and explore similar vibes using semantic search.</p>
+    </header>
+
+    {% if message %}
+        <div class="flash flash--success">{{ message }}</div>
+    {% endif %}
+    {% if error %}
+        <div class="flash flash--error">{{ error }}</div>
+    {% endif %}
+
+    <section class="card">
+        <h2>Add or Update Vibe</h2>
+        <form method="post" action="/vibes" class="form-grid">
+            <label>
+                UID
+                <input type="text" name="uid" required>
+            </label>
+            <label class="textarea-label">
+                Vibe
+                <textarea name="vibe_text" rows="4" placeholder="Describe the vibe..." required></textarea>
+            </label>
+            <button type="submit">Save Vibe</button>
+        </form>
+    </section>
+
+    <section class="card">
+        <h2>Search Vibes</h2>
+        <form method="post" action="/search" class="search-form">
+            <input type="text" name="query" value="{{ query or '' }}" placeholder="Search by vibe description..." required>
+            <input type="number" name="top_k" value="5" min="1" max="50">
+            <button type="submit">Search</button>
+        </form>
+
+        {% if results is not none %}
+            <div class="results">
+                <h3>Results{% if query %} for "{{ query }}"{% endif %}</h3>
+                {% if results %}
+                    <ul>
+                        {% for item in results %}
+                            <li>
+                                <span class="uid">{{ item.uid }}</span>
+                                <span class="score">similarity {{ '%.3f' | format(item.similarity) }}</span>
+                                <p class="vibe-text">{{ item.original_vibe }}</p>
+                                <p class="vibe-processed">processed: {{ item.processed_vibe }}</p>
+                                <span class="model">{{ item.embedding_model }}</span>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <p>No vibes matched your search yet.</p>
+                {% endif %}
+            </div>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Recently Updated Vibes</h2>
+        {% if vibes %}
+            <ul class="vibe-list">
+                {% for item in vibes %}
+                    <li>
+                        <span class="uid">{{ item.uid }}</span>
+                        <span class="timestamp">updated {{ item.updated_at or 'unknown' }}</span>
+                        <p class="vibe-text">{{ item.original_vibe }}</p>
+                        <p class="vibe-processed">processed: {{ item.processed_vibe }}</p>
+                        <span class="model">{{ item.embedding_model }}</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p>No vibes stored yet. Add one above to get started.</p>
+        {% endif %}
+    </section>
+</main>
+</body>
+</html>

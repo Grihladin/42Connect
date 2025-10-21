@@ -5,7 +5,9 @@ import Link from "next/link";
 import {
   ChangeEventHandler,
   FormEventHandler,
+  useCallback,
   useEffect,
+  useRef,
   useState,
   useTransition,
 } from "react";
@@ -42,12 +44,25 @@ type StudentPayload = {
     displayName: string | null;
     campus: string | null;
     readyToHelp: boolean | null;
+    vibe: string | null;
   };
   projects: {
     finished: ProjectSummary[];
     inProgress: ProjectSummary[];
     all: ProjectSummary[];
   };
+};
+
+type VibeMatch = {
+  student: {
+    login: string;
+    displayName: string | null;
+    campus: string | null;
+    readyToHelp: boolean | null;
+    vibe: string | null;
+  };
+  similarity: number;
+  latestProject: ProjectSummary | null;
 };
 
 const AUTH_BASE_URL =
@@ -59,6 +74,7 @@ export default function Page() {
   const [profileStatus, setProfileStatus] =
     useState<"idle" | "loading" | "error">("idle");
   const [isLoggingOut, startLogout] = useTransition();
+  const vibeMatchHandlerRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     async function fetchSession() {
@@ -100,6 +116,7 @@ export default function Page() {
               displayName: data.student.displayName,
               campus: data.student.campus ?? null,
               readyToHelp: data.student.readyToHelp ?? null,
+              vibe: data.student.vibe ?? null,
             },
             projects: {
               finished: normalizeProjects(data.projects.finished),
@@ -178,6 +195,72 @@ export default function Page() {
     }
   };
 
+  const handleVibeUpdate = async (value: string) => {
+    try {
+      const response = await fetch(`${AUTH_BASE_URL}/students/me/preferences`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ vibe: value }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update vibe");
+      }
+      const data = await response.json();
+      const nextVibe = data.student?.vibe ?? value;
+      setProfile((current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          student: {
+            ...current.student,
+            vibe: nextVibe,
+          },
+        };
+      });
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  };
+
+  const fetchVibeMatches = async (): Promise<VibeMatch[]> => {
+    try {
+      const response = await fetch(`${AUTH_BASE_URL}/students/me/vibe-matches`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to load vibe matches");
+      }
+      const data = await response.json();
+      const matches = Array.isArray(data.matches) ? data.matches : [];
+      return matches.map((match: any) => ({
+        student: {
+          login: match.student?.login ?? "",
+          displayName: match.student?.displayName ?? null,
+          campus: match.student?.campus ?? null,
+          readyToHelp: match.student?.readyToHelp ?? null,
+          vibe: match.student?.vibe ?? null,
+        },
+        similarity: typeof match.similarity === "number" ? match.similarity : 0,
+        latestProject: normalizeSingleProject(match.latestProject ?? null),
+      }));
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  };
+
+  const registerVibeMatchHandler = useCallback((callback: () => void) => {
+    vibeMatchHandlerRef.current = callback;
+  }, []);
+
+  const handleHeaderVibeMatchClick = () => {
+    vibeMatchHandlerRef.current?.();
+  };
+
   return (
     <div className="page-shell">
       <header className="page-shell__header">
@@ -194,20 +277,21 @@ export default function Page() {
         </div>
         <div className="page-shell__header-center">
           {session.status === "authenticated" ? (
-            <Link className="button button--primary button--small" href="/helpers">
-              Get help
-            </Link>
-          ) : (
-            <a className="button button--ghost button--small" href={loginUrl}>
-              Sign in
-            </a>
-          )}
-        </div>
-        <div className="page-shell__header-meta">
-          {session.status !== "authenticated" ? (
-            <span className="session-chip session-chip--offline">Guest</span>
+            <div className="page-shell__cta-group">
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={handleHeaderVibeMatchClick}
+              >
+                Match vibe
+              </button>
+              <Link className="button button--secondary" href="/helpers">
+                Get help
+              </Link>
+            </div>
           ) : null}
         </div>
+        <div className="page-shell__header-meta" />
       </header>
 
       <div className="page-shell__content">
@@ -215,9 +299,9 @@ export default function Page() {
           <LoadingCard message="Checking your session…" />
         )}
 
-        {session.status === "unauthenticated" && (
-          <LoginCard loginUrl={loginUrl} />
-        )}
+      {session.status === "unauthenticated" && (
+        <LoginCard loginUrl={loginUrl} />
+      )}
 
         {session.status === "authenticated" && (
           <DashboardCard
@@ -227,6 +311,9 @@ export default function Page() {
             onLogout={handleLogout}
             isLoggingOut={isLoggingOut}
             onReadyToHelpChange={handleReadyToHelpChange}
+            onVibeUpdate={handleVibeUpdate}
+            onFetchVibeMatches={fetchVibeMatches}
+            onRegisterVibeMatch={registerVibeMatchHandler}
           />
         )}
       </div>
@@ -245,6 +332,9 @@ type DashboardCardProps = {
   onLogout: FormEventHandler<HTMLFormElement>;
   isLoggingOut: boolean;
   onReadyToHelpChange: (value: boolean) => Promise<void>;
+  onVibeUpdate: (value: string) => Promise<void>;
+  onFetchVibeMatches: () => Promise<VibeMatch[]>;
+  onRegisterVibeMatch: (handler: () => void) => void;
 };
 
 function DashboardCard({
@@ -254,12 +344,16 @@ function DashboardCard({
   onLogout,
   isLoggingOut,
   onReadyToHelpChange,
+  onVibeUpdate,
+  onFetchVibeMatches,
+  onRegisterVibeMatch,
 }: DashboardCardProps) {
   const displayName = sessionUser.displayName || sessionUser.login;
   const campus = profile?.student.campus ?? null;
   const finished = profile?.projects.finished ?? [];
   const inProgress = profile?.projects.inProgress ?? [];
   const readyToHelpPreference = profile?.student.readyToHelp ?? false;
+  const vibeValue = profile?.student.vibe ?? "";
   const sortedInProgress = [...inProgress].sort(
     (a, b) => getProjectUpdateTimestamp(b) - getProjectUpdateTimestamp(a)
   );
@@ -269,10 +363,23 @@ function DashboardCard({
   const [helperPreference, setHelperPreference] = useState<boolean>(readyToHelpPreference);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
   const [isUpdatingHelper, startPreferenceUpdate] = useTransition();
+  const [vibeDraft, setVibeDraft] = useState<string>(vibeValue);
+  const [isSavingVibe, startVibeSave] = useTransition();
+  const [isMatchingVibe, startVibeMatch] = useTransition();
+  const [vibeError, setVibeError] = useState<string | null>(null);
+  const [vibeFeedback, setVibeFeedback] = useState<string | null>(null);
+  const [vibeMatchError, setVibeMatchError] = useState<string | null>(null);
+  const [vibeMatches, setVibeMatches] = useState<VibeMatch[]>([]);
 
   useEffect(() => {
     setHelperPreference(readyToHelpPreference);
   }, [readyToHelpPreference]);
+
+  useEffect(() => {
+    setVibeDraft(vibeValue);
+    setVibeMatches([]);
+    setVibeMatchError(null);
+  }, [vibeValue]);
 
   const handleReadyToHelpToggle: ChangeEventHandler<HTMLInputElement> = (event) => {
     const nextValue = event.target.checked;
@@ -289,6 +396,67 @@ function DashboardCard({
       }
     });
   };
+
+  const handleVibeInputChange: ChangeEventHandler<HTMLTextAreaElement> = (event) => {
+    setVibeDraft(event.target.value);
+    setVibeError(null);
+    setVibeFeedback(null);
+  };
+
+  const handleVibeSave = () => {
+    const trimmed = vibeDraft.trim();
+    if (!trimmed) {
+      setVibeError("Tell us a bit about your vibe before saving.");
+      setVibeFeedback(null);
+      return;
+    }
+    setVibeError(null);
+    startVibeSave(async () => {
+      try {
+        await onVibeUpdate(trimmed);
+        setVibeFeedback("Saved. Your vibe is live!");
+      } catch (error) {
+        console.error(error);
+        setVibeFeedback(null);
+        setVibeError("We couldn't update your vibe. Please try again.");
+      }
+    });
+  };
+
+  const triggerVibeMatch = useCallback(() => {
+    if (!vibeValue.trim()) {
+      setVibeMatchError("Share your vibe first, then we can match you up.");
+      return;
+    }
+    setVibeMatchError(null);
+    startVibeMatch(async () => {
+      try {
+        const matches = await onFetchVibeMatches();
+        setVibeMatches(matches);
+        if (matches.length === 0) {
+          setVibeMatchError("No vibe buddies just yet. Try again after more students opt in.");
+        }
+      } catch (error) {
+        console.error(error);
+        setVibeMatchError("We couldn't check vibes right now. Please try again later.");
+      }
+    });
+  }, [vibeValue, onFetchVibeMatches, startVibeMatch]);
+
+  const handleVibeMatchFromHeader = useCallback(() => {
+    triggerVibeMatch();
+    const vibeSection = document.querySelector(".panel__section--vibe");
+    if (vibeSection) {
+      vibeSection.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [triggerVibeMatch]);
+
+  useEffect(() => {
+    onRegisterVibeMatch(handleVibeMatchFromHeader);
+    return () => {
+      onRegisterVibeMatch(() => {});
+    };
+  }, [handleVibeMatchFromHeader, onRegisterVibeMatch]);
 
   return (
     <section className="panel panel--dashboard" aria-live="polite">
@@ -327,44 +495,142 @@ function DashboardCard({
       </header>
 
       {profile ? (
-        <section
-          className="panel__section panel__section--preference"
-          aria-label="Peer support preference"
-        >
-          <label
-            className={`helper-preference${
-              isUpdatingHelper ? " helper-preference--busy" : ""
-            }`}
+        <>
+          <section
+            className="panel__section panel__section--preference"
+            aria-label="Peer support preference"
           >
-            <input
-              type="checkbox"
-              className="helper-preference__input"
-              checked={helperPreference}
-              onChange={handleReadyToHelpToggle}
-              disabled={isUpdatingHelper}
-            />
-            <span className="helper-preference__indicator" aria-hidden="true" />
-            <span className="helper-preference__content">
-              <span className="helper-preference__title">Available to help others</span>
-              <span className="helper-preference__description">
-                When enabled, classmates can reach out for guidance on projects you&apos;ve
-                completed.
-              </span>
-            </span>
-            <span
-              className="helper-preference__status"
-              role="status"
-              aria-live="polite"
+            <label
+              className={`helper-preference${
+                isUpdatingHelper ? " helper-preference--busy" : ""
+              }`}
             >
-              {isUpdatingHelper ? "Saving…" : helperPreference ? "On" : "Off"}
-            </span>
-          </label>
-          {preferenceError ? (
-            <p className="helper-preference__error" role="alert">
-              {preferenceError}
-            </p>
-          ) : null}
-        </section>
+              <input
+                type="checkbox"
+                className="helper-preference__input"
+                checked={helperPreference}
+                onChange={handleReadyToHelpToggle}
+                disabled={isUpdatingHelper}
+              />
+              <span className="helper-preference__indicator" aria-hidden="true" />
+              <span className="helper-preference__content">
+                <span className="helper-preference__title">Available to help others</span>
+                <span className="helper-preference__description">
+                  When enabled, classmates can reach out for guidance on projects you&apos;ve
+                  completed.
+                </span>
+              </span>
+              <span
+                className="helper-preference__status"
+                role="status"
+                aria-live="polite"
+              >
+                {isUpdatingHelper ? "Saving…" : helperPreference ? "On" : "Off"}
+              </span>
+            </label>
+            {preferenceError ? (
+              <p className="helper-preference__error" role="alert">
+                {preferenceError}
+              </p>
+            ) : null}
+          </section>
+
+          <section className="panel__section panel__section--vibe" aria-label="Your vibe">
+            <header className="vibe-header">
+              <div>
+                <h3>Share your vibe</h3>
+                <p>
+                  Describe how you like to collaborate so we can surface classmates who match
+                  your energy.
+                </p>
+              </div>
+            </header>
+            <textarea
+              className="vibe-input"
+              rows={3}
+              value={vibeDraft}
+              onChange={handleVibeInputChange}
+              placeholder="Example: Night owl, loves pair-programming, patient explainer."
+              aria-label="Describe your vibe"
+              disabled={isSavingVibe}
+            />
+            <div className="vibe-actions">
+              <button
+                type="button"
+                className="button button--primary button--small"
+                onClick={handleVibeSave}
+                disabled={isSavingVibe}
+              >
+                {isSavingVibe ? "Saving…" : "Save vibe"}
+              </button>
+            </div>
+            {vibeFeedback ? (
+              <p className="vibe-message vibe-message--success" role="status">
+                {vibeFeedback}
+              </p>
+            ) : null}
+            {vibeError ? (
+              <p className="vibe-message vibe-message--error" role="alert">
+                {vibeError}
+              </p>
+            ) : null}
+            {vibeMatchError ? (
+              <p className="vibe-message vibe-message--error" role="alert">
+                {vibeMatchError}
+              </p>
+            ) : null}
+            {vibeMatches.length > 0 ? (
+              <ul className="vibe-matches">
+                {vibeMatches.map((match, index) => (
+                  <li
+                    key={match.student.login ? `${match.student.login}-${index}` : `vibe-match-${index}`}
+                    className="vibe-match-card"
+                  >
+                    <div className="vibe-match-card__header">
+                      <div>
+                        <span className="vibe-match-card__name">
+                          {match.student.displayName || match.student.login}
+                        </span>
+                        <span className="vibe-match-card__meta">
+                          @{match.student.login}
+                          {match.student.campus ? ` · ${match.student.campus}` : ""}
+                        </span>
+                      </div>
+                      <span className="vibe-match-card__score">
+                        {Math.round(match.similarity)}% vibe match
+                      </span>
+                    </div>
+                    {match.student.vibe ? (
+                      <p className="vibe-match-card__vibe">“{match.student.vibe}”</p>
+                    ) : null}
+                    <div className="vibe-match-card__footer">
+                      {match.latestProject ? (
+                        <span className="vibe-match-card__project">
+                          Latest: {match.latestProject.name || match.latestProject.slug || "Untitled"}
+                        </span>
+                      ) : null}
+                      {match.student.readyToHelp ? (
+                        <span className="vibe-match-card__badge">Ready to help</span>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="vibe-match-card__cta"
+                        onClick={() =>
+                          window.open(
+                            `https://slack.com/app_redirect?channel=${encodeURIComponent(match.student.login)}`,
+                            "_blank"
+                          )
+                        }
+                      >
+                        Ping on Slack
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        </>
       ) : null}
 
       {profileStatus === "loading" && (
@@ -505,10 +771,10 @@ function LoginCard({ loginUrl }: LoginCardProps) {
   return (
     <section className="panel panel--auth">
       <div className="panel__lead">
-        <h1>Sign in with 42 Intra</h1>
+        <h1>Welcome in! Ready to share your vibe?</h1>
         <p>
-          Connect your campus account to unlock a focused dashboard of your
-          progress.
+          Sign in with your 42 account to sync your projects, signal your vibe, and
+          connect with classmates who match your energy.
         </p>
       </div>
       <div className="panel__actions">
@@ -559,6 +825,18 @@ function normalizeProjects(projects: ProjectSummary[]): ProjectSummary[] {
         markedAt: project.markedAt ?? null,
       };
     });
+}
+
+function normalizeSingleProject(project: ProjectSummary | null): ProjectSummary | null {
+  if (!project) return null;
+  const normalized = normalizeProjects([project]);
+  if (normalized.length > 0) {
+    return normalized[0];
+  }
+  return {
+    ...project,
+    progressPercent: clampProgress(project.progressPercent ?? null),
+  };
 }
 
 function shouldDisplayProject(project: ProjectSummary): boolean {
