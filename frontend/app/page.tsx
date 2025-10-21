@@ -141,9 +141,9 @@ export default function Page() {
   return (
     <div className="page-shell">
       <header className="page-shell__header">
-        <div className="page-shell__brand" aria-label="42 Project Pulse">
+        <div className="page-shell__brand" aria-label="42 Connect">
           <span className="page-shell__glyph">42</span>
-          <span>Project Pulse</span>
+          <span>Connect</span>
         </div>
         {session.status === "authenticated" ? (
           <span className="session-chip session-chip--online">Signed in</span>
@@ -198,19 +198,12 @@ function DashboardCard({
   const campus = profile?.student.campus ?? null;
   const finished = profile?.projects.finished ?? [];
   const inProgress = profile?.projects.inProgress ?? [];
-  const tracked = profile?.projects.all ?? [];
   const sortedInProgress = [...inProgress].sort(
     (a, b) => getProjectUpdateTimestamp(b) - getProjectUpdateTimestamp(a)
   );
   const sortedFinished = [...finished].sort(
     (a, b) => getFinishedTimestamp(b) - getFinishedTimestamp(a)
   );
-
-  const stats = [
-    { label: "Finished", value: finished.length },
-    { label: "In progress", value: inProgress.length },
-    { label: "Tracked", value: tracked.length },
-  ];
 
   return (
     <section className="panel panel--dashboard" aria-live="polite">
@@ -247,17 +240,6 @@ function DashboardCard({
           </button>
         </form>
       </header>
-
-      <section className="panel__section" aria-label="Project overview">
-        <ul className="stats">
-          {stats.map((stat) => (
-            <li key={stat.label} className="stats__item">
-              <span className="stats__value">{stat.value}</span>
-              <span className="stats__label">{stat.label}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
 
       {profileStatus === "loading" && (
         <p className="panel__notice panel__notice--loading">
@@ -304,22 +286,22 @@ function ProjectList({ title, projects, emptyMessage, context }: ProjectListProp
     context === "in-progress" ? " project-card--in-progress" : " project-card--completed";
   const subtitleText =
     context === "in-progress"
-      ? "Current work, ordered by latest activity."
+      ? "Work ordered by latest activity."
       : "Recently completed projects, newest first.";
+  const countLabel = `${projects.length} ${
+    projects.length === 1 ? "project" : "projects"
+  }`;
 
   return (
     <section className={`project-card${variantClass}`}>
       <header className="project-card__header">
-        <div>
-          <h3 className="project-card__title">{title}</h3>
-          <p className="project-card__subtitle">{subtitleText}</p>
-        </div>
-        <span className="project-card__count" aria-label={`${projects.length} projects`}>
-          {projects.length}
-          <span className="project-card__count-label">
-            {projects.length === 1 ? "project" : "projects"}
+        <h3 className="project-card__title">
+          {title}
+          <span className="project-card__count" aria-label={countLabel}>
+            {countLabel}
           </span>
-        </span>
+        </h3>
+        <p className="project-card__subtitle">{subtitleText}</p>
       </header>
       <ul className="project-card__list">
         {projects.length === 0 ? (
