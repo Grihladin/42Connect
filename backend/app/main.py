@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .config import Settings, get_settings
 from .database import get_session
@@ -290,8 +290,14 @@ def is_in_progress_project(project: Project) -> bool:
 
 
 class UpdatePreferencesPayload(BaseModel):
-  vibe: str = Field(..., min_length=1, max_length=255)
-  readyToHelp: bool
+  vibe: str | None = Field(default=None, min_length=1, max_length=255)
+  readyToHelp: bool | None = None
+
+  @model_validator(mode="after")
+  def check_payload(cls, values: "UpdatePreferencesPayload") -> "UpdatePreferencesPayload":
+    if values.vibe is None and values.readyToHelp is None:
+      raise ValueError("Provide at least one field to update.")
+    return values
 
 
 @app.get("/students/me")
@@ -347,9 +353,21 @@ async def update_preferences(
   if not student:
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not synced")
 
-  cleaned_vibe = payload.vibe.strip()
-  student.vibe = cleaned_vibe or None
-  student.ready_to_help = payload.readyToHelp
+  updated = False
+
+  if payload.vibe is not None:
+    cleaned_vibe = payload.vibe.strip()
+    if not cleaned_vibe:
+      raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Vibe cannot be empty")
+    student.vibe = cleaned_vibe
+    updated = True
+
+  if payload.readyToHelp is not None:
+    student.ready_to_help = payload.readyToHelp
+    updated = True
+
+  if not updated:
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No updates were applied")
 
   await db.commit()
   await db.refresh(student)
