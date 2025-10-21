@@ -1,93 +1,112 @@
-# 42 Intra Login Starter
+# 42Connect – project pulse for 42 students
 
-This repository contains a minimal full-stack setup that lets your users authenticate with their 42 Intra credentials. The frontend is a Next.js App Router project, and the backend is a Python FastAPI service that performs the OAuth2 exchange with the 42 API.
+42Connect merges a polished Next.js dashboard with a FastAPI backend so 42 students can authenticate with their Intra account, sync active & finished projects, and request help from peers who already completed the same work. The project ships with a Docker-based setup (FastAPI, Next.js, PostgreSQL 16) for local development or self-hosted deployments.
 
-## Structure
+## ✨ Highlights
 
-- `frontend/` – Next.js 14 with a login dashboard that displays synced 42 data.
-- `backend/` – FastAPI application exposing `/auth/login`, `/auth/callback`, `/auth/session`, `/auth/logout`, and `/students/me`.
+- **Modern dashboard** – Dark, vertically stacked layout with progress tracking, helper availability toggle, and dedicated “Get help” view.
+- **FastAPI backend** – Handles the 42 OAuth2 flow, stores synced students/projects in PostgreSQL, and exposes helper matching.
+- **Ready to containerize** – Dockerfiles for frontend/backend plus a `docker-compose.yml` that seeds the database and starts all services.
+- **Type-safe frontend** – React 18 + Next.js App Router with linting, TypeScript, and custom hooks for session/profile state.
 
-## Prerequisites
+## 📁 Project structure
 
-- Node.js 18+ and npm (or pnpm/yarn) for the Next.js app.
-- Python 3.11+ for the FastAPI service.
-- PostgreSQL 13+ with a database reachable from the backend (`DATABASE_URL`).
-- A 42 developer application with a client ID, secret, and redirect URI that matches your backend (`http://localhost:8000/auth/callback` during development).
-
-## Backend setup
-
-1. Copy the example environment file and fill in your credentials:
-
-   ```bash
-   cd backend
-   cp .env.example .env
-   ```
-
-   Update the values:
-
-   - `FORTYTWO_CLIENT_ID` / `FORTYTWO_CLIENT_SECRET`: from the 42 API dashboard.
-   - `FORTYTWO_REDIRECT_URI`: must match the redirect configured in 42 (default `http://localhost:8000/auth/callback`).
-   - `FRONTEND_APP_URL`: where the Next.js app runs (default `http://localhost:3000`).
-   - `SESSION_SECRET_KEY`: long random string used to sign session cookies.
-   - `SESSION_COOKIE_SECURE`: set to `true` in production when serving over HTTPS.
-   - `DATABASE_URL`: asyncpg connection string, e.g. `postgresql+asyncpg://user:pass@localhost:5432/fortytwo_app`. Make sure this is set before running CLI commands such as `python -m app.manage init-db`.
-
-2. Create a virtual environment and install dependencies:
-
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-3. Initialise the database schema (creates the `students`, `projects`, and `cursus_enrollments` tables):
-
-   ```bash
-   python -m app.manage init-db
-   ```
-
-   Repeat with `python -m app.manage drop-db` if you need a clean slate during development.
-
-4. Run the FastAPI server:
-
-   ```bash
-   uvicorn app.main:app --reload --port 8000
-   ```
-
-The FastAPI service accepts cross-origin requests from the configured frontend origin, issues HTTP-only session cookies, and, after each successful login, synchronises the student profile, cursus enrolments, and project progress into PostgreSQL.
-
-> **Schema updates:** If you pull changes that adjust the table layout (e.g., trimming stored project fields), run `python -m app.manage drop-db` followed by `python -m app.manage init-db` to rebuild the schema.
-
-## Frontend setup
-
-1. Install dependencies:
-
-   ```bash
-   cd frontend
-   npm install
-   ```
-
-2. Start the dev server:
-
-   ```bash
-   npm run dev
-   ```
-
-3. Navigate to `http://localhost:3000` and click “Continue with 42.” You will be redirected to 42 Intra, and on success the backend sets the session cookie, syncs your data, and redirects back to the dashboard where finished and in-progress projects are listed.
-
-If you need to point the UI at a differently hosted backend, set `NEXT_PUBLIC_AUTH_BASE_URL` in `frontend/.env.local`:
-
-```bash
-NEXT_PUBLIC_AUTH_BASE_URL=http://localhost:8000
+```
+.
+├── backend/        # FastAPI application (Python 3.11, asyncpg, SQLAlchemy 2)
+├── frontend/       # Next.js 14 App Router UI (React 18)
+├── docker-compose.yml
+└── docs/           # Additional docs (schema reference, etc.)
 ```
 
-## Database schema
+## 🚀 Quick start (Docker Compose)
 
-An entity diagram and column reference for `students`, `projects`, and `cursus_enrollments` lives in [`docs/schema.md`](docs/schema.md). Use it as the source of truth when building analytics queries or extending the data model.
+1. **Set secrets**
+   - Copy `backend/.env` (or create one) and populate:
+     - `FORTYTWO_CLIENT_ID`, `FORTYTWO_CLIENT_SECRET`
+     - `SESSION_SECRET_KEY`
+     - Optional overrides for cookie domain/secure flags
 
-## Production notes
+2. **Launch the stack**
 
-- Protect the sync endpoints with rate limiting or background jobs if many students log in concurrently (42’s API enforces rate limits).
-- Replace or augment the signed cookie session with a clustered store (Redis/PostgreSQL) if you need refresh-token rotation or manual revocation.
-- Serve both services behind HTTPS and configure `SESSION_COOKIE_SECURE=true`.
-- Consider adding CSRF protection for the logout endpoint (e.g., double-submit cookie or SameSite=strict) and tightening CORS if the frontend origin changes per environment.
+   ```bash
+   docker compose up --build
+   ```
+
+   Services:
+   - `db`: PostgreSQL 16 with persistent volume
+   - `backend`: FastAPI on <http://localhost:8000>, auto-runs `python -m app.manage init-db`
+   - `frontend`: Next.js on <http://localhost:3000>, configured to call the backend
+
+3. **Sign in**
+   - Visit <http://localhost:3000>
+   - Click **Get help** or the login CTA to authenticate via 42 Intra
+
+> Re-run with `docker compose down` / `up --build` after changes. Logs are viewable via `docker compose logs -f backend` (or `frontend`, `db`).
+
+## 🛠️ Manual setup
+
+### Backend
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m app.manage init-db
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Environment variables (see `backend/.env`):
+
+| Variable | Description |
+| --- | --- |
+| `FORTYTWO_CLIENT_ID` / `FORTYTWO_CLIENT_SECRET` | OAuth credentials from the 42 developer portal |
+| `FORTYTWO_REDIRECT_URI` | Typically `http://localhost:8000/auth/callback` |
+| `FRONTEND_APP_URL` | Allowed origin for CORS (default `http://localhost:3000`) |
+| `SESSION_SECRET_KEY` | Random string for signing session cookies |
+| `DATABASE_URL` | Asyncpg connection string, e.g. `postgresql+asyncpg://app:app@localhost:5432/fortytwo_app` |
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Optionally set `NEXT_PUBLIC_AUTH_BASE_URL` (default `http://localhost:8000`) in `frontend/.env.local`.
+
+## 🧭 Key features
+
+- **Session-aware dashboard** – Welcomes returning students, surfaces project statistics, and exposes helper availability.
+- **Helpers directory** – `/helpers` route lists classmates who recently completed matching projects (sorted by completion date).
+- **Preference toggles** – Students can opt into helping others via a checkbox that updates backend state.
+- **Project normalization** – Keeps CPP modules and other special cases readable by stripping stray percent suffixes while preserving identifiers.
+
+## 🧱 Database schema
+
+SQLAlchemy models live in `backend/app/models.py`, covering:
+
+- `students` – Profile, campus, vibe, helper preference
+- `projects` – Current/finished projects with progress, validation status, timestamps
+- `cursus_enrollments` – Historical cursus data
+
+Run `python -m app.manage drop-db` followed by `init-db` if migrations are not yet applied after schema changes.
+
+## 🛡️ Production checklist
+
+- Serve behind HTTPS and set `SESSION_COOKIE_SECURE=true`
+- Store secrets outside the repo (env vars, secret manager)
+- Add alembic/SQL migrations before evolving the schema in production
+- Harden containers (non-root user, pinned digests, `npm install sharp` for Next.js image optimization)
+- Add monitoring (logs, metrics) and a reverse proxy (nginx/Traefik) for TLS termination
+
+## 🤝 Contributing
+
+1. Fork & clone
+2. Create a feature branch
+3. Run `npm run lint` (frontend) and `pip install -r requirements.txt && python -m compileall` (backend sanity)
+4. Submit a PR describing the change and any DB schema impacts
+
+Issues and feature requests are welcome via GitHub Issues. Let’s make 42Connect the go-to personal project pulse for the 42 community! 💙
