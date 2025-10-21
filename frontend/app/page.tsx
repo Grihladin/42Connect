@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import Image from "next/image";
 import {
   ChangeEventHandler,
@@ -183,11 +184,18 @@ export default function Page() {
           <span className="page-shell__glyph">42</span>
           <span>Project Pulse</span>
         </div>
-        {session.status === "authenticated" ? (
-          <span className="session-chip session-chip--online">Signed in</span>
-        ) : (
-          <span className="session-chip session-chip--offline">Guest</span>
-        )}
+        <div className="page-shell__header-actions">
+          {session.status === "authenticated" ? (
+            <>
+              <Link className="button button--primary button--small" href="/helpers">
+                Get help
+              </Link>
+              <span className="session-chip session-chip--online">Signed in</span>
+            </>
+          ) : (
+            <span className="session-chip session-chip--offline">Guest</span>
+          )}
+        </div>
       </header>
 
       <div className="page-shell__content">

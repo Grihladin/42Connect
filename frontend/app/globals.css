@@ -166,6 +166,12 @@ a {
   gap: clamp(1.5rem, 3vw, 2.25rem);
 }
 
+.page-shell__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
 .page-shell__footer {
   text-align: center;
   font-size: 0.82rem;
@@ -212,6 +218,11 @@ a {
 
 .button--ghost:hover {
   background: rgba(148, 163, 184, 0.16);
+}
+
+.button--small {
+  padding: 0.55rem 1.2rem;
+  font-size: 0.85rem;
 }
 
 .panel {
@@ -478,6 +489,189 @@ a {
   outline-offset: 2px;
 }
 
+.helpers-panel {
+  position: relative;
+  border-radius: clamp(1.5rem, 3vw, 2rem);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(170deg, rgba(9, 14, 27, 0.82), rgba(5, 10, 20, 0.68));
+  padding: clamp(1.8rem, 4vw, 2.6rem);
+  box-shadow: 0 24px 80px -50px rgba(15, 118, 171, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1.4rem, 3vw, 2rem);
+}
+
+.helpers-panel--loading {
+  align-items: center;
+  text-align: center;
+  min-height: 220px;
+}
+
+.helpers-panel__header h1 {
+  margin: 0;
+  font-size: clamp(1.55rem, 3vw, 2rem);
+  font-weight: 600;
+}
+
+.helpers-panel__header p {
+  margin: 0.6rem 0 0;
+  color: var(--text-secondary);
+  max-width: 42rem;
+  line-height: 1.5;
+}
+
+.helpers-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.helpers-panel__status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.helpers-panel__status--error {
+  color: #fecaca;
+}
+
+.helpers-panel__spinner {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  border: 3px solid rgba(148, 163, 184, 0.18);
+  border-top-color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+
+.helpers-projects {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1.2rem, 2.8vw, 1.6rem);
+}
+
+.helper-project {
+  border-radius: 1.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(10, 17, 34, 0.72);
+  padding: clamp(1.4rem, 3vw, 2rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.helper-project__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.helper-project__title {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.4vw, 1.35rem);
+  font-weight: 600;
+}
+
+.helper-project__subtitle {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  max-width: 32rem;
+}
+
+.helper-project__count {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.18);
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.9rem;
+}
+
+.helper-project__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.helper-project__empty {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  padding: 0.75rem 0;
+}
+
+.helper-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  border-radius: 1.1rem;
+  padding: 1rem 1.2rem;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.helper-card:hover,
+.helper-card:focus-within {
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.helper-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.helper-card__name {
+  font-weight: 600;
+}
+
+.helper-card__meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.helper-card__details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.helper-card__tag {
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.helper-card__score {
+  font-size: 0.92rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  background: rgba(94, 234, 212, 0.16);
+  color: #5eead4;
+}
+
+.helper-card__note {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.78);
+  background: rgba(56, 189, 248, 0.14);
+  border-radius: 0.75rem;
+  padding: 0.25rem 0.6rem;
+}
+
 .project-card {
   display: flex;
   flex-direction: column;
@@ -701,6 +895,27 @@ a {
 
   .panel__sections {
     gap: 1.5rem;
+  }
+
+  .page-shell__header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .helper-project {
+    padding: 1.2rem;
+  }
+
+  .helper-project__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .helper-card__details {
+    align-items: flex-start;
   }
 }
 
