@@ -1,4 +1,4 @@
-# 42Connect – project pulse for 42 students
+# 42Connect – for 42 students
 
 42Connect merges a polished Next.js dashboard with a FastAPI backend so 42 students can authenticate with their Intra account, sync active & finished projects, and request help from peers who already completed the same work. The project ships with a Docker-based setup (FastAPI, Next.js, PostgreSQL 16) for local development or self-hosted deployments.
 
