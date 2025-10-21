@@ -155,6 +155,20 @@ def project_to_dict(project: Project) -> dict:
   }
 
 
+def helper_match_to_dict(project: Project, student: Student) -> dict:
+  return {
+    "student": {
+      "login": student.login,
+      "displayName": student.display_name,
+      "campus": student.campus,
+      "vibe": student.vibe,
+      "readyToHelp": student.ready_to_help,
+    },
+    "finishedAt": project.finished_at.isoformat() if project.finished_at else None,
+    "finalMark": project.final_mark,
+  }
+
+
 def cursus_to_dict(cursus: CursusEnrollment) -> dict:
   return {
     "id": cursus.id,
@@ -373,6 +387,67 @@ async def update_preferences(
   await db.refresh(student)
 
   return JSONResponse({"student": student_to_dict(student)})
+
+
+async def _fetch_helpers_for_project(
+  db: AsyncSession,
+  student_id: int,
+  project_ref: Project,
+):
+  conditions = [
+    Project.student_id != student_id,
+    Student.ready_to_help.is_(True),
+    Project.finished_at.is_not(None),
+  ]
+
+  if project_ref.forty_two_project_id is not None:
+    conditions.append(Project.forty_two_project_id == project_ref.forty_two_project_id)
+  elif project_ref.slug:
+    conditions.append(Project.slug == project_ref.slug)
+  else:
+    return []
+
+  result = await db.execute(
+    select(Project, Student)
+    .join(Student, Project.student_id == Student.id)
+    .where(*conditions)
+    .order_by(Project.finished_at.desc())
+  )
+
+  return result.all()
+
+
+@app.get("/students/me/helpers")
+async def helpers_endpoint(
+  session: SessionData = Depends(get_required_session),
+  db: AsyncSession = Depends(get_session),
+) -> JSONResponse:
+  student = await db.scalar(
+    select(Student)
+    .where(Student.forty_two_id == session.user.id)
+    .options(selectinload(Student.projects))
+  )
+
+  if not student:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not synced")
+
+  in_progress_projects = [
+    project for project in student.projects if is_in_progress_project(project)
+  ]
+
+  matches = []
+  for project in in_progress_projects:
+    helper_rows = await _fetch_helpers_for_project(db, student.id, project)
+    helpers_payload = [
+      helper_match_to_dict(helper_project, helper_student)
+      for helper_project, helper_student in helper_rows
+    ]
+    matches.append({
+      "project": project_to_dict(project),
+      "helpers": helpers_payload,
+    })
+
+  return JSONResponse({"projects": matches})
 
 
 @app.get("/healthz")
