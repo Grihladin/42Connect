@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import logoMark from "../../42_Logo.png";
 
 type SessionUser = {
   id: number;
@@ -115,21 +117,26 @@ export default function HelpersPage() {
   return (
     <div className="page-shell">
       <header className="page-shell__header">
-        <div className="page-shell__brand" aria-label="42 Project Pulse helpers">
-          <span className="page-shell__glyph">42</span>
-          <span>Project Pulse · Helpers</span>
+        <div className="page-shell__brand" aria-label="42Connect helpers">
+          <Image
+            src={logoMark}
+            alt="42 logo"
+            className="page-shell__logo"
+            priority
+          />
+          <span className="page-shell__brand-mark">
+            <span className="page-shell__brand-mark--accent">Connect</span>
+          </span>
         </div>
-        <div className="page-shell__header-actions">
+        <div className="page-shell__header-center">
+          <Link className="button button--primary button--small" href="/helpers">
+            Get help
+          </Link>
+        </div>
+        <div className="page-shell__header-meta">
           <Link className="button button--ghost button--small" href="/">
             Back to dashboard
           </Link>
-          {session.status === "authenticated" ? (
-            <span className="session-chip session-chip--online">
-              {session.user.displayName || session.user.login}
-            </span>
-          ) : (
-            <span className="session-chip session-chip--offline">Guest</span>
-          )}
         </div>
       </header>
 

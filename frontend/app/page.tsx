@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 import {
   ChangeEventHandler,
   FormEventHandler,
@@ -9,6 +9,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import logoMark from "../42_Logo.png";
 
 type SessionUser = {
   id: number;
@@ -180,21 +181,32 @@ export default function Page() {
   return (
     <div className="page-shell">
       <header className="page-shell__header">
-        <div className="page-shell__brand" aria-label="42 Project Pulse">
-          <span className="page-shell__glyph">42</span>
-          <span>Project Pulse</span>
+        <div className="page-shell__brand" aria-label="42Connect">
+          <Image
+            src={logoMark}
+            alt="42 logo"
+            className="page-shell__logo"
+            priority
+          />
+          <span className="page-shell__brand-mark">
+            <span className="page-shell__brand-mark--accent">Connect</span>
+          </span>
         </div>
-        <div className="page-shell__header-actions">
+        <div className="page-shell__header-center">
           {session.status === "authenticated" ? (
-            <>
-              <Link className="button button--primary button--small" href="/helpers">
-                Get help
-              </Link>
-              <span className="session-chip session-chip--online">Signed in</span>
-            </>
+            <Link className="button button--primary button--small" href="/helpers">
+              Get help
+            </Link>
           ) : (
-            <span className="session-chip session-chip--offline">Guest</span>
+            <a className="button button--ghost button--small" href={loginUrl}>
+              Sign in
+            </a>
           )}
+        </div>
+        <div className="page-shell__header-meta">
+          {session.status !== "authenticated" ? (
+            <span className="session-chip session-chip--offline">Guest</span>
+          ) : null}
         </div>
       </header>
 
@@ -531,11 +543,15 @@ function normalizeProjects(projects: ProjectSummary[]): ProjectSummary[] {
       const parsedPercent =
         typeof project.progressPercent === "number"
           ? { percent: project.progressPercent, cleanedName: project.name }
-          : parseTrailingPercentage(project.name);
-      const normalizedName =
+          : parseTrailingPercentage(project.name, project.slug ?? null);
+      const baseName =
         parsedPercent && parsedPercent.cleanedName !== undefined
           ? parsedPercent.cleanedName
           : project.name;
+      const normalizedName = ensureModuleIdentifier(
+        baseName,
+        project.slug ?? null
+      );
       return {
         ...project,
         name: normalizedName,
@@ -552,7 +568,10 @@ function shouldDisplayProject(project: ProjectSummary): boolean {
   return !name.includes("piscine");
 }
 
-function parseTrailingPercentage(name?: string | null):
+function parseTrailingPercentage(
+  name?: string | null,
+  slug?: string | null
+):
   | { percent: number; cleanedName: string | null }
   | undefined {
   if (!name) return undefined;
@@ -561,6 +580,11 @@ function parseTrailingPercentage(name?: string | null):
   const percent = Number(match[1]);
   if (Number.isNaN(percent)) return undefined;
   const cleanedName = name.slice(0, match.index).trimEnd();
+
+  if (shouldTreatAsIdentifier(percent, cleanedName, slug ?? null)) {
+    return undefined;
+  }
+
   return {
     percent: Math.min(percent, 100),
     cleanedName: cleanedName.length ? cleanedName : null,
@@ -580,6 +604,39 @@ function clampProgress(value?: number | null): number | null {
     return null;
   }
   return Math.max(0, Math.min(Math.round(value), 100));
+}
+
+function shouldTreatAsIdentifier(percent: number, cleanedName?: string | null, slug?: string | null): boolean {
+  if (percent <= 9) {
+    const identifierPatterns = /\bmodule\b/i;
+    if (cleanedName && identifierPatterns.test(cleanedName)) {
+      return true;
+    }
+    if (slug) {
+      if (identifierPatterns.test(slug)) {
+        return true;
+      }
+      const slugMatch = slug.match(/(\d+)$/);
+      if (slugMatch && Number(slugMatch[1]) === percent) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function ensureModuleIdentifier(name?: string | null, slug?: string | null): string | null | undefined {
+  if (!name) return name ?? null;
+  const hasModuleNumber = /\bmodule\s*\d{1,2}\b/i.test(name);
+  if (hasModuleNumber) {
+    return name;
+  }
+  const slugMatch = slug?.match(/cpp[-_]?module[-_]?(\d{1,2})$/i);
+  if (!slugMatch) {
+    return name;
+  }
+  const moduleNumber = slugMatch[1].padStart(2, "0");
+  return name.replace(/\bmodule\b/i, (match) => `${match} ${moduleNumber}`);
 }
 
 function getTimestamp(value?: string | null): number {
