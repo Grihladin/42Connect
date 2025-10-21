@@ -35,11 +35,11 @@
 
    Services:
    - `db`: PostgreSQL 16 with persistent volume
-   - `backend`: FastAPI on <http://localhost:8000>, auto-runs `python -m app.manage init-db`
-   - `frontend`: Next.js on <http://localhost:3000>, configured to call the backend
+   - `backend`: FastAPI on <http://168.119.52.144:8000>, auto-runs `python -m app.manage init-db`
+   - `frontend`: Next.js on <http://168.119.52.144:3000>, configured to call the backend
 
 3. **Sign in**
-   - Visit <http://localhost:3000>
+   - Visit <http://168.119.52.144:3000>
    - Click **Get help** or the login CTA to authenticate via 42 Intra
 
 > Re-run with `docker compose down` / `up --build` after changes. Logs are viewable via `docker compose logs -f backend` (or `frontend`, `db`).
@@ -62,8 +62,8 @@ Environment variables (see `backend/.env`):
 | Variable | Description |
 | --- | --- |
 | `FORTYTWO_CLIENT_ID` / `FORTYTWO_CLIENT_SECRET` | OAuth credentials from the 42 developer portal |
-| `FORTYTWO_REDIRECT_URI` | Typically `http://localhost:8000/auth/callback` |
-| `FRONTEND_APP_URL` | Allowed origin for CORS (default `http://localhost:3000`) |
+| `FORTYTWO_REDIRECT_URI` | Typically `http://168.119.52.144:8000/auth/callback` |
+| `FRONTEND_APP_URL` | Allowed origin for CORS (default `http://168.119.52.144:3000`) |
 | `SESSION_SECRET_KEY` | Random string for signing session cookies |
 | `DATABASE_URL` | Asyncpg connection string, e.g. `postgresql+asyncpg://app:app@localhost:5432/fortytwo_app` |
 
@@ -75,7 +75,7 @@ npm install
 npm run dev
 ```
 
-Optionally set `NEXT_PUBLIC_AUTH_BASE_URL` (default `http://localhost:8000`) in `frontend/.env.local`.
+Optionally set `NEXT_PUBLIC_AUTH_BASE_URL` (default `http://168.119.52.144:8000`) in `frontend/.env.local`.
 
 ## 🧭 Key features
 

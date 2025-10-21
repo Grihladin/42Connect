@@ -66,7 +66,7 @@ type VibeMatch = {
 };
 
 const AUTH_BASE_URL =
-  process.env.NEXT_PUBLIC_AUTH_BASE_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_AUTH_BASE_URL ?? "http://168.119.52.144:8000";
 
 export default function Page() {
   const [session, setSession] = useState<SessionState>({ status: "loading" });
