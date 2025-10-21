@@ -548,10 +548,8 @@ function normalizeProjects(projects: ProjectSummary[]): ProjectSummary[] {
         parsedPercent && parsedPercent.cleanedName !== undefined
           ? parsedPercent.cleanedName
           : project.name;
-      const normalizedName = ensureModuleIdentifier(
-        baseName,
-        project.slug ?? null
-      );
+      const normalizedName =
+        ensureModuleIdentifier(baseName ?? null, project.slug ?? null) ?? baseName ?? null;
       return {
         ...project,
         name: normalizedName,

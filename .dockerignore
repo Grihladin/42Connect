@@ -1,0 +1,14 @@
+.git
+.gitignore
+node_modules
+frontend/node_modules
+frontend/.next
+backend/__pycache__
+__pycache__
+.DS_Store
+*.pyc
+*.pyo
+*.pyd
+.env
+backend/.env
+frontend/.env
